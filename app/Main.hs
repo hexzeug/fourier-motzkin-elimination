@@ -60,8 +60,8 @@ reduce is =
         collect (Inequality t IsolatedVariable) (gts, zs, lts) = (gts, zs, t : lts)
         collect i (gts, zs, lts) = (gts, i : zs, lts)
 
-solve :: (Ord a, Fractional a) => [Inequality a] -> [Inequality a]
-solve = reduce . map isolateFirst
+solveForFirst :: (Ord a, Fractional a) => [Inequality a] -> [Inequality a]
+solveForFirst = reduce . map isolateFirst
 
 eliminate :: [Inequality a] -> [Inequality a]
 eliminate ((Inequality IsolatedVariable gt) : (Inequality lt IsolatedVariable) : is) =
@@ -71,9 +71,31 @@ expand :: Num a => [Inequality a] -> [Inequality a]
 expand ((Inequality (Max lts) (Min gts)) : is) =
     [normalize (Inequality lt gt) | lt <- lts, gt <- gts] ++ is
 
+evaluate :: (Ord a) => Term a -> a
+evaluate (Constant a) = a
+evaluate (Max ts) = maximum (map evaluate ts)
+evaluate (Min ts) = minimum (map evaluate ts)
 
-project :: (Ord a, Fractional a) => [Inequality a] -> [Inequality a]
-project = expand . eliminate . solve
+substitute :: Num a => [a] -> Term a -> Term a
+substitute xs (LinearTerm as a) = Constant (a + sum (zipWith (*) xs as))
+substitute xs (Max ts) = Max (map (substitute xs) ts)
+substitute xs (Min ts) = Min (map (substitute xs) ts)
+
+
+data Optimum = Minimum | Maximum
+    deriving (Show, Read, Eq)
+
+optimizeLast :: (Ord a, Fractional a) => Optimum -> [Inequality a] -> [a]
+optimizeLast opt (Inequality (LinearTerm [] 0) _ : _) = []
+optimizeLast opt is =
+    let
+        solutionInFirst = solveForFirst is
+        xs = (optimizeLast opt . expand . eliminate) solutionInFirst
+        ((Inequality _ upperBound) : (Inequality lowerBound _) : _) = solutionInFirst
+    in
+        case opt of
+            Minimum -> (evaluate . substitute xs) lowerBound : xs
+            Maximum -> (evaluate . substitute xs) upperBound : xs
 
 
 x :: [Inequality Double]
@@ -84,6 +106,15 @@ x =
         Inequality (LinearTerm [-1, -1] 0) (Constant (-2)),
         Inequality (LinearTerm [1, -1] 0) (Constant 3),
         Inequality (LinearTerm [0, -1] 0) (Constant 0)
+    ]
+
+y :: [Inequality Double]
+y =
+    [
+        Inequality (LinearTerm [1, 1] 0) (Constant 3),
+        Inequality (LinearTerm [-1, 2] 0) (Constant 3),
+        Inequality (LinearTerm [1, -1] 0) (Constant 0),
+        Inequality (LinearTerm [-1, 0] 0) (Constant 0)
     ]
 
 main :: IO ()
