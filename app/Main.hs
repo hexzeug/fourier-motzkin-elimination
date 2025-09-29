@@ -1,34 +1,27 @@
-data Term a =
-    Constant a |
-    LinearTerm [a] a |
+data Term =
+    Constant Rational |
+    LinearTerm [Rational] Rational |
     IsolatedVariable |
-    Max [Term a] |
-    Min [Term a]
+    Max [Term] |
+    Min [Term]
     deriving Show
 
--- scale :: Num a => a -> Term a -> Term a
--- scale f (Constant a) = Constant (f * a)
--- scale f (LinearTerm as a) = LinearTerm (map (*f) as) a
-
--- neg :: Num a => Term a -> Term a
--- neg = scale (-1)
-
--- add :: Num a => Term a -> Term a -> Term a
--- add (Constant a) (Constant b) = Constant (a + b)
--- add (Constant a) (LinearTerm bs b) = LinearTerm bs (a + b)
--- add (LinearTerm as a) (Constant b) = LinearTerm as (a + b)
--- add (LinearTerm as a) (LinearTerm bs b)
---     | length as /= length bs = error "Can only add linear terms with equal amount of coefficients"
---     | otherwise = LinearTerm (zipWith (+) as bs) (a + b)
-
--- sub :: Num a => Term a -> Term a -> Term a
--- sub a b = a `add` neg b
-
-
-data Inequality a = Inequality (Term a) (Term a)
+data Equation = Equation Term Term
     deriving Show
 
-normalize :: Num a => Inequality a -> Inequality a
+data Inequality = Inequality Term Term
+    deriving Show
+
+data Optimum = Minimum | Maximum
+    deriving (Show, Read, Eq)
+
+isolateLast :: Equation -> Equation
+isolateLast (Equation (LinearTerm as 0) IsolatedVariable) =
+    Equation (LinearTerm as' 0) IsolatedVariable
+    where
+        as' = map (/ negate (last as)) (init as ++ [-1])
+
+normalize :: Inequality -> Inequality
 normalize (Inequality (LinearTerm as a) (LinearTerm bs b)) =
     Inequality (LinearTerm (zipWith (-) as bs) 0) (Constant (b - a))
 normalize (Inequality (Constant a) (Constant b)) =
@@ -40,7 +33,7 @@ normalize (Inequality (Constant a) (LinearTerm bs b)) =
 
 
 
-isolateFirst :: (Ord a, Fractional a) => Inequality a -> Inequality a
+isolateFirst :: Inequality -> Inequality
 isolateFirst (Inequality (LinearTerm (a1 : as) 0) (Constant b))
     | a1 > 0 = Inequality IsolatedVariable (LinearTerm as' b')
     | a1 == 0 = Inequality (LinearTerm as 0) (Constant b)
@@ -49,7 +42,7 @@ isolateFirst (Inequality (LinearTerm (a1 : as) 0) (Constant b))
         as' = map (negate . (/a1)) as
         b' = b / a1
 
-reduce :: [Inequality a] -> [Inequality a]
+reduce :: [Inequality] -> [Inequality]
 reduce is =
     let
         (gts, zs, lts) = foldr collect ([], [], []) is
@@ -60,32 +53,28 @@ reduce is =
         collect (Inequality t IsolatedVariable) (gts, zs, lts) = (gts, zs, t : lts)
         collect i (gts, zs, lts) = (gts, i : zs, lts)
 
-solveForFirst :: (Ord a, Fractional a) => [Inequality a] -> [Inequality a]
+solveForFirst :: [Inequality] -> [Inequality]
 solveForFirst = reduce . map isolateFirst
 
-eliminate :: [Inequality a] -> [Inequality a]
+eliminate :: [Inequality] -> [Inequality]
 eliminate ((Inequality IsolatedVariable gt) : (Inequality lt IsolatedVariable) : is) =
     Inequality lt gt : is
 
-expand :: Num a => [Inequality a] -> [Inequality a]
+expand :: [Inequality] -> [Inequality]
 expand ((Inequality (Max lts) (Min gts)) : is) =
     [normalize (Inequality lt gt) | lt <- lts, gt <- gts] ++ is
 
-evaluate :: (Ord a) => Term a -> a
+evaluate :: Term -> Rational
 evaluate (Constant a) = a
 evaluate (Max ts) = maximum (map evaluate ts)
 evaluate (Min ts) = minimum (map evaluate ts)
 
-substitute :: Num a => [a] -> Term a -> Term a
+substitute :: [Rational] -> Term -> Term
 substitute xs (LinearTerm as a) = Constant (a + sum (zipWith (*) xs as))
 substitute xs (Max ts) = Max (map (substitute xs) ts)
 substitute xs (Min ts) = Min (map (substitute xs) ts)
 
-
-data Optimum = Minimum | Maximum
-    deriving (Show, Read, Eq)
-
-optimizeLast :: (Ord a, Fractional a) => Optimum -> [Inequality a] -> [a]
+optimizeLast :: Optimum -> [Inequality] -> [Rational]
 optimizeLast opt (Inequality (LinearTerm [] 0) _ : _) = []
 optimizeLast opt is =
     let
@@ -98,7 +87,7 @@ optimizeLast opt is =
             Maximum -> (evaluate . substitute xs) upperBound : xs
 
 
-x :: [Inequality Double]
+x :: [Inequality]
 x =
     [
         Inequality (LinearTerm [-1, 0] 0) (Constant 0),
@@ -108,7 +97,7 @@ x =
         Inequality (LinearTerm [0, -1] 0) (Constant 0)
     ]
 
-y :: [Inequality Double]
+y :: [Inequality]
 y =
     [
         Inequality (LinearTerm [1, 1] 0) (Constant 3),
