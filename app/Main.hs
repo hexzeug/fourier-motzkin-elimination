@@ -6,20 +6,19 @@ data Term =
     Min [Term]
     deriving Show
 
-data Equation = Equation Term Term
-    deriving Show
-
 data Inequality = Inequality Term Term
     deriving Show
 
 data Optimum = Minimum | Maximum
     deriving (Show, Read, Eq)
 
-isolateLast :: Equation -> Equation
-isolateLast (Equation (LinearTerm as 0) IsolatedVariable) =
-    Equation (LinearTerm as' 0) IsolatedVariable
-    where
-        as' = map (/ negate (last as)) (init as ++ [-1])
+isolateLast :: Term -> Term
+isolateLast (LinearTerm as a) =
+    let
+        an = negate $ last as
+        as' = init as ++ [-1]
+    in
+        LinearTerm (map (/ an) as') (a / an)
 
 normalize :: Inequality -> Inequality
 normalize (Inequality (LinearTerm as a) (LinearTerm bs b)) =
@@ -74,38 +73,55 @@ substitute xs (LinearTerm as a) = Constant (a + sum (zipWith (*) xs as))
 substitute xs (Max ts) = Max (map (substitute xs) ts)
 substitute xs (Min ts) = Min (map (substitute xs) ts)
 
+substituteLast :: Term -> Term -> Term
+substituteLast (LinearTerm as 0) (LinearTerm bs 0) =
+    let
+        bs' = init bs ++ [0]
+        b = last bs
+    in
+        LinearTerm (zipWith (+) (map (*b) as) bs') 0
+
+substituteLasts :: Term -> [Inequality] -> [Inequality]
+substituteLasts t =
+    map subLast
+    where
+        subLast (Inequality l g) = Inequality (substituteLast t l) g
+
 optimizeLast :: Optimum -> [Inequality] -> [Rational]
-optimizeLast opt (Inequality (LinearTerm [] 0) _ : _) = []
-optimizeLast opt is =
+optimizeLast _ (Inequality (LinearTerm [] 0) _ : _) = []
+optimizeLast o is =
     let
         solutionInFirst = solveForFirst is
-        xs = (optimizeLast opt . expand . eliminate) solutionInFirst
+        xs = (optimizeLast o . expand . eliminate) solutionInFirst
         ((Inequality _ upperBound) : (Inequality lowerBound _) : _) = solutionInFirst
     in
-        case opt of
+        case o of
             Minimum -> (evaluate . substitute xs) lowerBound : xs
             Maximum -> (evaluate . substitute xs) upperBound : xs
 
+optimizeTerm :: Optimum -> Term -> [Inequality] -> [Rational]
+optimizeTerm o t is =
+    let
+        t' = isolateLast t
+        is' = substituteLasts t' is
+        xs = optimizeLast o is'
+        l = evaluate . substitute xs $ t'
+    in
+        init xs ++ [l]
 
-x :: [Inequality]
-x =
+exampleTerm :: Term
+exampleTerm = LinearTerm [350, 300] 0
+
+exampleConstraints :: [Inequality]
+exampleConstraints =
     [
+        Inequality (LinearTerm [18, 12] 0) (Constant 3132),
+        Inequality (LinearTerm [1, 1] 0) (Constant 200),
+        Inequality (LinearTerm [6, 8] 0) (Constant 1440),
         Inequality (LinearTerm [-1, 0] 0) (Constant 0),
-        Inequality (LinearTerm [1, 2] 0) (Constant 6),
-        Inequality (LinearTerm [-1, -1] 0) (Constant (-2)),
-        Inequality (LinearTerm [1, -1] 0) (Constant 3),
         Inequality (LinearTerm [0, -1] 0) (Constant 0)
-    ]
-
-y :: [Inequality]
-y =
-    [
-        Inequality (LinearTerm [1, 1] 0) (Constant 3),
-        Inequality (LinearTerm [-1, 2] 0) (Constant 3),
-        Inequality (LinearTerm [1, -1] 0) (Constant 0),
-        Inequality (LinearTerm [-1, 0] 0) (Constant 0)
     ]
 
 main :: IO ()
 main = do
-    print "Hello World"
+    print $ map fromRational $ optimizeTerm Maximum exampleTerm exampleConstraints
