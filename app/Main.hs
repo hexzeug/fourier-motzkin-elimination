@@ -1,3 +1,6 @@
+import Text.Read (readMaybe)
+import Data.Maybe (mapMaybe)
+
 data Term =
     Constant Rational |
     LinearTerm [Rational] Rational |
@@ -124,19 +127,27 @@ optimizeTerm o t is =
                 in
                     Just (init xs ++ [l])
 
-exampleTerm :: Term
-exampleTerm = LinearTerm [350, 300] 0
+parseRational :: String -> Maybe Rational
+parseRational s = toRational <$> (readMaybe s :: Maybe Double)
 
-exampleConstraints :: [Inequality]
-exampleConstraints =
-    [
-        Inequality (LinearTerm [18, 12] 0) (Constant 3132),
-        Inequality (LinearTerm [1, 1] 0) (Constant 200),
-        Inequality (LinearTerm [6, 8] 0) (Constant 1440),
-        Inequality (LinearTerm [-1, 0] 0) (Constant 0),
-        Inequality (LinearTerm [0, -1] 0) (Constant 0)
-    ]
+parseConstraint :: String -> Inequality
+parseConstraint s =
+    let
+        xs = mapMaybe parseRational (words s)
+    in
+        Inequality (LinearTerm (init xs) 0) (Constant (last xs))
 
 main :: IO ()
 main = do
-    print $ map fromRational <$> optimizeTerm MaxInt exampleTerm exampleConstraints
+    problemString <- getLine
+    let problem = words problemString
+    let optimum = case problem of
+            ("max" : "int" : _) -> MaxInt 
+            ("max" : _) -> Maximum 
+            ("min" : "int" : _) -> MinInt 
+            ("min" : _) -> Minimum
+    let term = LinearTerm (mapMaybe parseRational problem) 0
+
+    constraintsString <- getContents
+    let constraints = map parseConstraint $ lines constraintsString
+    print $ map fromRational <$> optimizeTerm optimum term constraints
