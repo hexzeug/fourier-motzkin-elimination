@@ -9,7 +9,7 @@ data Term =
 data Inequality = Inequality Term Term
     deriving Show
 
-data Optimum = Minimum | Maximum
+data Optimum = Minimum | Maximum | MinInt | MaxInt
     deriving (Show, Read, Eq)
 
 isolateLast :: Term -> Term
@@ -87,27 +87,42 @@ substituteLasts t =
     where
         subLast (Inequality l g) = Inequality (substituteLast t l) g
 
-optimizeLast :: Optimum -> [Inequality] -> [Rational]
-optimizeLast _ (Inequality (LinearTerm [] 0) _ : _) = []
+optimizeLast :: Optimum -> [Inequality] -> Maybe [Rational]
+optimizeLast _ (Inequality (LinearTerm [] 0) _ : _) = Just []
 optimizeLast o is =
     let
         solutionInFirst = solveForFirst is
-        xs = (optimizeLast o . expand . eliminate) solutionInFirst
-        ((Inequality _ upperBound) : (Inequality lowerBound _) : _) = solutionInFirst
-    in
-        case o of
-            Minimum -> (evaluate . substitute xs) lowerBound : xs
-            Maximum -> (evaluate . substitute xs) upperBound : xs
+    in case (optimizeLast o . expand . eliminate) solutionInFirst of
+        Nothing -> Nothing
+        Just xs ->
+            let
+                ((Inequality _ upperBound) : (Inequality lowerBound _) : _) = solutionInFirst
+                lo = (evaluate . substitute xs) lowerBound
+                hi = (evaluate . substitute xs) upperBound
+                loi = fromIntegral (ceiling lo) :: Rational
+                hii = fromIntegral (floor hi) :: Rational
+            in
+                if hi < lo
+                    then Nothing
+                    else case o of
+                        Minimum -> Just (lo : xs)
+                        Maximum -> Just (hi : xs)
+                        MinInt -> if loi > hi then Nothing else Just (loi : xs)
+                        MaxInt -> if hii < lo then Nothing else Just (hii : xs)
 
-optimizeTerm :: Optimum -> Term -> [Inequality] -> [Rational]
+optimizeTerm :: Optimum -> Term -> [Inequality] -> Maybe [Rational]
 optimizeTerm o t is =
     let
         t' = isolateLast t
         is' = substituteLasts t' is
-        xs = optimizeLast o is'
-        l = evaluate . substitute xs $ t'
     in
-        init xs ++ [l]
+        case optimizeLast o is' of
+            Nothing -> Nothing
+            Just xs ->
+                let
+                    l = evaluate . substitute xs $ t'
+                in
+                    Just (init xs ++ [l])
 
 exampleTerm :: Term
 exampleTerm = LinearTerm [350, 300] 0
@@ -124,4 +139,4 @@ exampleConstraints =
 
 main :: IO ()
 main = do
-    print $ map fromRational $ optimizeTerm Maximum exampleTerm exampleConstraints
+    print $ map fromRational <$> optimizeTerm MaxInt exampleTerm exampleConstraints
